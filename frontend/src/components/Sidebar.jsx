@@ -5,10 +5,10 @@ function Sidebar() {
   return (
     <aside className="sidebar" style={{ display: 'flex', flexDirection: 'column', overflowY: 'auto' }}>
       <div className="sidebar-logo">
-        <img src="/images/Favicon_Light.png" alt="Triadmarkets" style={{ width: 64, height: 64, marginRight: 8 }} />
+        <img src="/images/Favicon_Light.png" alt="Triadmarkets" className="logo-icon" />
         <h1>
           Triadmarkets
-          <span style={{ fontSize: '12px', background: 'linear-gradient(90deg, #6366f1, #a855f7)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent' }}>Omnichannel</span>
+          <span>Omnichannel</span>
         </h1>
       </div>
       <nav className="sidebar-nav" style={{ paddingBottom: '30px' }}>

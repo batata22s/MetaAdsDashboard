@@ -95,9 +95,10 @@ body {
 }
 
 .sidebar-logo .logo-icon {
-  width: 40px;
-  height: 40px;
+  width: 42px;
+  height: 42px;
   border-radius: var(--radius-md);
+  object-fit: contain;
 }
 
 .sidebar-logo h1 {
