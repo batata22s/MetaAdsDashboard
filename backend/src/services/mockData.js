@@ -16,7 +16,7 @@ function generateDailyData(days) {
     const lpViews = Math.floor(linkClicks * 0.85);
     const purchases = Math.floor(Math.random() * 8 + 1);
     const leads = Math.floor(Math.random() * 12 + 2);
-    
+
     data.push({
       date_start: dateStr,
       date_stop: dateStr,
@@ -102,25 +102,25 @@ function getMockCampaignInsights(days) {
 
 function getMockAccountInsights(days) {
   const campaignInsights = getMockCampaignInsights(days);
-  
+
   const aggregated = campaignInsights.reduce((acc, ins) => {
     acc.spend += Number(ins.spend);
     acc.impressions += Number(ins.impressions);
     acc.reach += Number(ins.reach);
     acc.clicks += Number(ins.clicks);
-    
+
     ins.actions.forEach(a => {
       const existing = acc.actions.find(x => x.action_type === a.action_type);
       if (existing) existing.value = String(Number(existing.value) + Number(a.value));
       else acc.actions.push({ ...a });
     });
-    
+
     ins.cost_per_action_type.forEach(a => {
       const existing = acc.cost_per_action_type.find(x => x.action_type === a.action_type);
       if (existing) existing.value = ((Number(existing.value) + Number(a.value)) / 2).toFixed(2);
       else acc.cost_per_action_type.push({ ...a });
     });
-    
+
     return acc;
   }, { spend: 0, impressions: 0, reach: 0, clicks: 0, actions: [], cost_per_action_type: [] });
 
@@ -141,7 +141,17 @@ function getMockAccountInsights(days) {
 }
 
 function getDaysFromPreset(preset) {
-  const map = { today: 1, last_3d: 3, last_7d: 7, last_14d: 14, last_28d: 28, last_30d: 30, last_90d: 90 };
+  const map = {
+    today: 1,
+    yesterday: 1,
+    last_3d: 3,
+    last_7d: 7,
+    last_14d: 14,
+    last_15d: 15,
+    last_28d: 28,
+    last_30d: 30,
+    last_90d: 90
+  };
   return map[preset] || 7;
 }
 

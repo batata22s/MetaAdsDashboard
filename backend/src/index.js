@@ -2,6 +2,7 @@ require('dotenv').config();
 const express = require('express');
 const cors = require('cors');
 const metaRoutes = require('./routes/meta');
+const xRoutes = require('./routes/x');
 
 const app = express();
 const PORT = process.env.PORT || 3001;
@@ -11,6 +12,9 @@ app.use(express.json());
 
 // Meta API routes
 app.use('/api/meta', metaRoutes);
+
+// X API routes
+app.use('/api/x', xRoutes);
 
 // Health check
 app.get('/api/health', (req, res) => {

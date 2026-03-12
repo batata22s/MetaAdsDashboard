@@ -10,23 +10,32 @@ class MetaApiService {
   }
 
   getDateRange(datePreset) {
-    const now = new Date();
-    const presets = {
-      today: 1,
-      last_3d: 3,
-      last_7d: 7,
-      last_14d: 14,
-      last_28d: 28,
-      last_30d: 30,
-      last_90d: 90,
-    };
-    const days = presets[datePreset] || 7;
-    const since = new Date(now);
-    since.setDate(since.getDate() - days);
-    return {
-      since: since.toISOString().split('T')[0],
-      until: now.toISOString().split('T')[0],
-    };
+    if (!datePreset || datePreset === 'maximum') return null;
+
+    const fmt = (d) => new Intl.DateTimeFormat('fr-CA', { timeZone: 'America/Sao_Paulo', year: 'numeric', month: '2-digit', day: '2-digit' }).format(d);
+
+    // today/yesterday: use Meta's native presets (respects the ad account timezone)
+    // This matches exactly how the Meta Ads Manager works
+    if (datePreset === 'today' || datePreset === 'yesterday') {
+      return null;
+    }
+
+    // Para todos os outros presets "last_Xd", calculamos manualmente 
+    // para garantir que a Meta considere o dia de hoje também.
+    if (datePreset.startsWith('last_') && datePreset.endsWith('d')) {
+      let days = parseInt(datePreset.replace('last_', '').replace('d', ''), 10);
+      days = days - 1;
+
+      const now = new Date();
+      const untilDate = fmt(now);
+
+      now.setDate(now.getDate() - days);
+      const sinceDate = fmt(now);
+
+      return { since: sinceDate, until: untilDate };
+    }
+
+    return null;
   }
 
   get insightFields() {
@@ -96,7 +105,7 @@ class MetaApiService {
           params: {
             fields: this.campaignFields,
             access_token: this.accessToken,
-            limit: 100,
+            limit: 1000,
           },
         }
       );
@@ -113,13 +122,18 @@ class MetaApiService {
         fields: this.insightFields,
         access_token: this.accessToken,
         level: 'account',
+        limit: 1000,
       };
 
       if (since && until) {
         params.time_range = JSON.stringify({ since, until });
       } else {
         const range = this.getDateRange(datePreset);
-        params.time_range = JSON.stringify(range);
+        if (range) {
+          params.time_range = JSON.stringify(range);
+        } else {
+          params.date_preset = datePreset;
+        }
       }
 
       const response = await axios.get(
@@ -133,20 +147,56 @@ class MetaApiService {
     }
   }
 
-  async getCampaignInsights(datePreset = 'last_7d', since, until) {
+  async getAccountInsightsDaily(datePreset = 'last_7d', since, until) {
     try {
       const params = {
         fields: this.insightFields,
         access_token: this.accessToken,
-        level: 'campaign',
+        level: 'account',
         time_increment: 1,
+        limit: 1000,
       };
 
       if (since && until) {
         params.time_range = JSON.stringify({ since, until });
       } else {
         const range = this.getDateRange(datePreset);
-        params.time_range = JSON.stringify(range);
+        if (range) {
+          params.time_range = JSON.stringify(range);
+        } else {
+          params.date_preset = datePreset;
+        }
+      }
+
+      const response = await axios.get(
+        `${META_BASE_URL}/${this.adAccountId}/insights`,
+        { params }
+      );
+      return response.data.data || [];
+    } catch (error) {
+      console.error('Error fetching daily account insights:', error.response?.data || error.message);
+      throw error;
+    }
+  }
+
+  async getCampaignInsights(datePreset = 'last_7d', since, until) {
+    try {
+      const params = {
+        fields: this.insightFields,
+        access_token: this.accessToken,
+        level: 'campaign',
+        limit: 1000,
+      };
+
+      if (since && until) {
+        params.time_range = JSON.stringify({ since, until });
+      } else {
+        const range = this.getDateRange(datePreset);
+        if (range) {
+          params.time_range = JSON.stringify(range);
+        } else {
+          params.date_preset = datePreset;
+        }
       }
 
       const response = await axios.get(
@@ -166,13 +216,18 @@ class MetaApiService {
         fields: this.insightFields,
         access_token: this.accessToken,
         time_increment: 1,
+        limit: 1000,
       };
 
       if (since && until) {
         params.time_range = JSON.stringify({ since, until });
       } else {
         const range = this.getDateRange(datePreset);
-        params.time_range = JSON.stringify(range);
+        if (range) {
+          params.time_range = JSON.stringify(range);
+        } else {
+          params.date_preset = datePreset;
+        }
       }
 
       const response = await axios.get(
@@ -191,7 +246,7 @@ class MetaApiService {
       const params = {
         fields: 'id,name,status,effective_status,daily_budget,lifetime_budget,optimization_goal,billing_event,targeting,created_time',
         access_token: this.accessToken,
-        limit: 100,
+        limit: 1000,
       };
 
       const url = campaignId
@@ -212,13 +267,18 @@ class MetaApiService {
         fields: this.insightFields,
         access_token: this.accessToken,
         time_increment: 1,
+        limit: 1000,
       };
 
       if (since && until) {
         params.time_range = JSON.stringify({ since, until });
       } else {
         const range = this.getDateRange(datePreset);
-        params.time_range = JSON.stringify(range);
+        if (range) {
+          params.time_range = JSON.stringify(range);
+        } else {
+          params.date_preset = datePreset;
+        }
       }
 
       const response = await axios.get(
@@ -235,9 +295,9 @@ class MetaApiService {
   async getAds(adsetId) {
     try {
       const params = {
-        fields: 'id,name,status,effective_status,creative,created_time',
+        fields: 'id,name,status,effective_status,creative{name,body,image_url,thumbnail_url,video_id},created_time',
         access_token: this.accessToken,
-        limit: 100,
+        limit: 1000,
       };
 
       const url = adsetId
@@ -252,19 +312,55 @@ class MetaApiService {
     }
   }
 
-  async getAdInsights(adId, datePreset = 'last_7d', since, until) {
+  async getAllAdInsights(datePreset = 'last_7d', since, until) {
     try {
       const params = {
         fields: this.insightFields,
         access_token: this.accessToken,
-        time_increment: 1,
+        level: 'ad',
+        limit: 1000,
       };
 
       if (since && until) {
         params.time_range = JSON.stringify({ since, until });
       } else {
         const range = this.getDateRange(datePreset);
-        params.time_range = JSON.stringify(range);
+        if (range) {
+          params.time_range = JSON.stringify(range);
+        } else {
+          params.date_preset = datePreset;
+        }
+      }
+
+      const response = await axios.get(
+        `${META_BASE_URL}/${this.adAccountId}/insights`,
+        { params }
+      );
+      return response.data.data || [];
+    } catch (error) {
+      console.error('Error fetching all ad insights:', error.response?.data || error.message);
+      throw error;
+    }
+  }
+
+  async getAdInsights(adId, datePreset = 'last_7d', since, until) {
+    try {
+      const params = {
+        fields: this.insightFields,
+        access_token: this.accessToken,
+        time_increment: 1,
+        limit: 1000,
+      };
+
+      if (since && until) {
+        params.time_range = JSON.stringify({ since, until });
+      } else {
+        const range = this.getDateRange(datePreset);
+        if (range) {
+          params.time_range = JSON.stringify(range);
+        } else {
+          params.date_preset = datePreset;
+        }
       }
 
       const response = await axios.get(
@@ -274,6 +370,44 @@ class MetaApiService {
       return response.data.data || [];
     } catch (error) {
       console.error('Error fetching ad insights:', error.response?.data || error.message);
+      throw error;
+    }
+  }
+
+  async getAccountInfo() {
+    try {
+      const response = await axios.get(
+        `${META_BASE_URL}/${this.adAccountId}`,
+        {
+          params: {
+            fields: 'name,account_id,balance,amount_spent,currency,account_status,spend_cap,funding_source_details',
+            access_token: this.accessToken,
+          },
+        }
+      );
+
+      const data = response.data;
+
+      // Also try to get the prepaid fund amount from the fund endpoint
+      try {
+        const fundRes = await axios.get(
+          `${META_BASE_URL}/${this.adAccountId}/adfunds`,
+          {
+            params: {
+              fields: 'amount,funding_type',
+              access_token: this.accessToken,
+            },
+          }
+        );
+        data.funds = fundRes.data?.data || [];
+      } catch (e) {
+        // funds endpoint may not be available for all account types
+        data.funds = [];
+      }
+
+      return data;
+    } catch (error) {
+      console.error('Error fetching account info:', error.response?.data || error.message);
       throw error;
     }
   }

@@ -26,18 +26,19 @@ function formatPercent(num) {
 function getStatusClass(status) {
   const s = (status || '').toUpperCase();
   if (s === 'ACTIVE') return 'active';
-  if (s === 'PAUSED') return 'paused';
+  if (s.includes('PAUSED')) return 'paused';
   return 'inactive';
 }
 
 function getStatusLabel(status) {
+  const s = (status || '').toUpperCase();
+  if (s.includes('PAUSED')) return 'Pausado';
   const labels = {
     ACTIVE: 'Ativo',
-    PAUSED: 'Pausado',
     ARCHIVED: 'Arquivado',
     DELETED: 'Deletado',
   };
-  return labels[(status || '').toUpperCase()] || status;
+  return labels[s] || status;
 }
 
 function CampaignTable({ campaigns, insights }) {
@@ -102,7 +103,7 @@ function CampaignTable({ campaigns, insights }) {
           </thead>
           <tbody>
             {mergedData.map(c => (
-              <tr key={c.id} onClick={() => navigate(`/campaign/${c.id}`)}>
+              <tr key={c.id} onClick={() => navigate(`/meta/campaign/${c.id}`)}>
                 <td className="campaign-name" title={c.name}>{c.name}</td>
                 <td>
                   <span className={`status-badge ${getStatusClass(c.effective_status)}`}>

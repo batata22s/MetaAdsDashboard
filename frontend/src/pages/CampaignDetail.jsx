@@ -5,6 +5,8 @@ import KpiCard from '../components/KpiCard';
 import DateFilter from '../components/DateFilter';
 import { SpendLineChart, ImpressionsClicksChart } from '../components/Charts';
 import { getCampaignInsightsById, getAdSets, getAdSetInsights } from '../services/api';
+import { FiDownload } from 'react-icons/fi';
+import pdfService from '../services/pdfService';
 
 const EVENT_NAMES = {
   'page_engagement': 'Engajamento na Página',
@@ -13,37 +15,33 @@ const EVENT_NAMES = {
   'post_reaction': 'Reações no Post',
   'post_interaction_cross': 'Interações Cruzadas',
   'landing_page_view': 'Visualizações da Landing Page',
-  'omni_landing_page_view': 'Visualizações da Landing (Omni)',
   'comment': 'Comentários',
   'post': 'Publicações',
   'like': 'Curtidas',
-  'onsite_conversion.post_save': 'Salvamentos de Post',
-  'onsite_conversion.post_net_like': 'Curtidas Líquidas',
-  'offsite_conversion.fb_pixel_complete_registration': 'Registros Completos (Pixel)',
+  'post_save': 'Salvamentos de Post',
+  'post_net_like': 'Curtidas Líquidas',
   'complete_registration': 'Registros Completos',
-  'omni_complete_registration': 'Registros Completos (Omni)',
-  'offsite_conversion.fb_pixel_initiate_checkout': 'Checkouts Iniciados (Pixel)',
   'initiate_checkout': 'Checkouts Iniciados',
-  'omni_initiated_checkout': 'Checkouts Iniciados (Omni)',
-  'offsite_conversion.fb_pixel_add_payment_info': 'Info Pagamento (Pixel)',
   'add_payment_info': 'Info Pagamento Adicionada',
-  'onsite_web_lead': 'Leads Web',
   'lead': 'Leads',
-  'offsite_conversion.fb_pixel_lead': 'Leads (Pixel)',
   'purchase': 'Compras',
-  'omni_purchase': 'Compras (Omni)',
-  'onsite_web_purchase': 'Compras Web',
-  'offsite_conversion.fb_pixel_purchase': 'Compras (Pixel)',
-  'onsite_conversion.total_messaging_connection': 'Conexões via Mensagem',
-  'onsite_conversion.messaging_conversation_started_7d': 'Conversas Iniciadas (7d)',
-  'onsite_conversion.messaging_first_reply': 'Primeiras Respostas',
+  'total_messaging_connection': 'Conexões via Mensagem',
+  'messaging_conversation_started_7d': 'Conversas Iniciadas (7d)',
+  'messaging_first_reply': 'Primeiras Respostas',
 };
+
+function getBaseActionType(action_type) {
+  if (!action_type) return '';
+  return action_type
+    .replace(/^offsite_conversion\.fb_pixel_/, '')
+    .replace(/^omni_/, '')
+    .replace(/^onsite_web_/, '')
+    .replace(/^onsite_conversion\./, '');
+}
 
 function formatEventName(raw) {
   if (EVENT_NAMES[raw]) return EVENT_NAMES[raw];
-  return raw.replace(/offsite_conversion\.fb_pixel_/g, '')
-    .replace(/onsite_conversion\./g, '')
-    .replace(/onsite_web_/g, '')
+  return raw
     .replace(/_/g, ' ')
     .replace(/\b\w/g, c => c.toUpperCase());
 }
@@ -65,13 +63,15 @@ function formatNumber(num) {
 function getStatusClass(status) {
   const s = (status || '').toUpperCase();
   if (s === 'ACTIVE') return 'active';
-  if (s === 'PAUSED') return 'paused';
+  if (s.includes('PAUSED')) return 'paused';
   return 'inactive';
 }
 
 function getStatusLabel(status) {
-  const labels = { ACTIVE: 'Ativo', PAUSED: 'Pausado', ARCHIVED: 'Arquivado', DELETED: 'Deletado' };
-  return labels[(status || '').toUpperCase()] || status;
+  const s = (status || '').toUpperCase();
+  if (s.includes('PAUSED')) return 'Pausado';
+  const labels = { ACTIVE: 'Ativo', ARCHIVED: 'Arquivado', DELETED: 'Deletado' };
+  return labels[s] || status;
 }
 
 function CampaignDetail() {
@@ -81,19 +81,36 @@ function CampaignDetail() {
   const [adSets, setAdSets] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
+  const [isExporting, setIsExporting] = useState(false);
+
+  const handleExportPdf = async () => {
+    setIsExporting(true);
+    try {
+      const fileName = `Triadmarkets Dashboard - Campanha ${id} - ${new Date().toLocaleDateString('pt-BR').replace(/\//g, '-')}.pdf`;
+      await pdfService.generate('campaign-detail-content', fileName);
+    } catch (err) {
+      console.error('Export error:', err);
+    } finally {
+      setIsExporting(false);
+    }
+  };
 
   const fetchData = useCallback(async () => {
     setLoading(true);
     setError(null);
     try {
-      const [insightsRes, adSetsRes] = await Promise.all([
-        getCampaignInsightsById(id, { date_preset: datePreset }),
+      const presetValue = typeof datePreset === 'object' ? datePreset.preset : datePreset;
+      const sinceValue = typeof datePreset === 'object' ? datePreset.since : undefined;
+      const untilValue = typeof datePreset === 'object' ? datePreset.until : undefined;
+
+      const [insightsRes, adSetsRes] = await Promise.allSettled([
+        getCampaignInsightsById(id, { date_preset: presetValue, since: sinceValue, until: untilValue }),
         getAdSets({ campaign_id: id }),
       ]);
-      setInsights(insightsRes.data.data || []);
-      setAdSets(adSetsRes.data.data || []);
+      setInsights(insightsRes.status === 'fulfilled' ? (insightsRes.value?.data?.data || []) : []);
+      setAdSets(adSetsRes.status === 'fulfilled' ? (adSetsRes.value?.data?.data || []) : []);
     } catch (err) {
-      setError(err.response?.data?.error || err.message);
+      setError(err.response?.data?.error || err.message || 'Erro desconhecido');
     } finally {
       setLoading(false);
     }
@@ -109,13 +126,18 @@ function CampaignDetail() {
     acc.reach += Number(ins.reach || 0);
     if (ins.actions) {
       ins.actions.forEach(a => {
-        if (!acc.actions[a.action_type]) acc.actions[a.action_type] = 0;
-        acc.actions[a.action_type] += Number(a.value || 0);
+        const base = getBaseActionType(a.action_type);
+        const val = Number(a.value || 0);
+        acc.actions[base] = Math.max(acc.actions[base] || 0, val);
       });
     }
     if (ins.cost_per_action_type) {
       ins.cost_per_action_type.forEach(a => {
-        acc.costs[a.action_type] = Number(a.value || 0);
+        const base = getBaseActionType(a.action_type);
+        const val = Number(a.value || 0);
+        if (val > 0) {
+          acc.costs[base] = acc.costs[base] ? Math.min(acc.costs[base], val) : val;
+        }
       });
     }
     return acc;
@@ -140,7 +162,7 @@ function CampaignDetail() {
     return (
       <div className="loading-container">
         <div className="loading-spinner"></div>
-        <p className="loading-text">Carregando detalhes da campanha...</p>
+        <p className="loading-text">Analisando milhares de dados da campanha...</p>
       </div>
     );
   }
@@ -155,10 +177,12 @@ function CampaignDetail() {
     );
   }
 
+  const hasData = insights.length > 0;
+
   return (
     <>
       <div className="breadcrumb">
-        <Link to="/campaigns">Campanhas</Link>
+        <Link to="/meta/campaigns">Campanhas</Link>
         <FiChevronRight />
         <span>{campaignName}</span>
       </div>
@@ -168,99 +192,135 @@ function CampaignDetail() {
           <h2>{campaignName}</h2>
           <p className="page-header-subtitle">Detalhes da campanha</p>
         </div>
-        <DateFilter selected={datePreset} onChange={setDatePreset} />
-      </div>
-
-      <div className="kpi-grid">
-        <KpiCard label="Gasto" value={formatCurrency(totals.spend)} icon={<FiDollarSign />} color="blue" />
-        <KpiCard label="Impressões" value={formatNumber(totals.impressions)} icon={<FiEye />} color="cyan" />
-        <KpiCard label="Cliques" value={formatNumber(totals.clicks)} icon={<FiMousePointer />} color="green" />
-        <KpiCard label="CTR" value={ctr.toFixed(2) + '%'} icon={<FiPercent />} color="warm" />
-        <KpiCard label="CPC" value={formatCurrency(cpc)} icon={<FiTarget />} color="red" />
-        <KpiCard label="CPM" value={formatCurrency(cpm)} icon={<FiTrendingUp />} color="purple" />
-      </div>
-
-      <div className="charts-grid">
-        <div className="chart-card">
-          <div className="chart-card-header">
-            <h3 className="chart-card-title">Gasto Diário</h3>
-          </div>
-          <SpendLineChart data={dailyData} />
+        <div style={{ display: 'flex', gap: 12, alignItems: 'center' }}>
+          <button
+            className="btn-export"
+            onClick={handleExportPdf}
+            disabled={isExporting}
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: 5,
+              padding: '5px 10px',
+              borderRadius: 6,
+              background: 'transparent',
+              border: '1px solid rgba(99,102,241,0.2)',
+              color: 'var(--text-muted)',
+              fontWeight: 500,
+              fontSize: 11,
+              cursor: isExporting ? 'not-allowed' : 'pointer',
+              transition: 'all 0.2s'
+            }}
+          >
+            <FiDownload size={12} />
+            {isExporting ? '...' : 'PDF'}
+          </button>
+          <DateFilter selected={datePreset} onChange={setDatePreset} />
         </div>
-        <div className="chart-card">
-          <div className="chart-card-header">
-            <h3 className="chart-card-title">Cliques e Impressões</h3>
-          </div>
-          <ImpressionsClicksChart data={dailyData} />
-        </div>
       </div>
 
-      {/* Events */}
-      {Object.keys(totals.actions).length > 0 && (
-        <div className="table-card">
-          <div className="table-card-header">
-            <h3 className="table-card-title">Eventos e Conversões ({Object.keys(totals.actions).length})</h3>
+      <div id="campaign-detail-content">
+
+        <div className="kpi-grid">
+          <KpiCard label="Gasto" value={formatCurrency(totals.spend)} icon={<FiDollarSign />} color="blue" />
+          <KpiCard label="Impressões" value={formatNumber(totals.impressions)} icon={<FiEye />} color="cyan" />
+          <KpiCard label="Cliques" value={formatNumber(totals.clicks)} icon={<FiMousePointer />} color="green" />
+          <KpiCard label="CTR" value={ctr.toFixed(2) + '%'} icon={<FiPercent />} color="warm" />
+          <KpiCard label="CPC" value={formatCurrency(cpc)} icon={<FiTarget />} color="red" />
+          <KpiCard label="CPM" value={formatCurrency(cpm)} icon={<FiTrendingUp />} color="purple" />
+        </div>
+
+        {hasData && dailyData.length > 0 && (
+          <div className="charts-grid">
+            <div className="chart-card">
+              <div className="chart-card-header">
+                <h3 className="chart-card-title">Gasto Diário</h3>
+              </div>
+              <SpendLineChart data={dailyData} />
+            </div>
+            <div className="chart-card">
+              <div className="chart-card-header">
+                <h3 className="chart-card-title">Cliques e Impressões</h3>
+              </div>
+              <ImpressionsClicksChart data={dailyData} />
+            </div>
           </div>
-          <div className="table-container">
-            <table className="campaign-table">
-              <thead>
-                <tr>
-                  <th style={{ width: '50%' }}>Evento</th>
-                  <th>Quantidade</th>
-                  <th>Custo Unitário</th>
-                </tr>
-              </thead>
-              <tbody>
-                {Object.entries(totals.actions)
-                  .sort((a, b) => b[1] - a[1])
-                  .map(([name, value]) => (
-                    <tr key={name} style={{ cursor: 'default' }}>
-                      <td style={{ fontWeight: 500 }}>{formatEventName(name)}</td>
-                      <td style={{ fontWeight: 700, fontSize: 15 }}>{formatNumber(value)}</td>
-                      <td style={{ color: 'var(--text-secondary)' }}>{totals.costs[name] ? formatCurrency(totals.costs[name]) : '—'}</td>
+        )}
+
+        {!hasData && (
+          <div style={{ textAlign: 'center', padding: '40px 20px', color: 'var(--text-muted)' }}>
+            <p style={{ fontSize: 16 }}>Nenhum dado encontrado para esta campanha no período selecionado.</p>
+            <p style={{ fontSize: 13, marginTop: 8 }}>Tente alterar o filtro de datas acima.</p>
+          </div>
+        )}
+
+        {/* Events */}
+        {Object.keys(totals.actions).length > 0 && (
+          <div className="table-card">
+            <div className="table-card-header">
+              <h3 className="table-card-title">Eventos e Conversões ({Object.keys(totals.actions).length})</h3>
+            </div>
+            <div className="table-container">
+              <table className="campaign-table">
+                <thead>
+                  <tr>
+                    <th style={{ width: '50%' }}>Evento</th>
+                    <th>Quantidade</th>
+                    <th>Custo Unitário</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {Object.entries(totals.actions)
+                    .sort((a, b) => b[1] - a[1])
+                    .map(([name, value]) => (
+                      <tr key={name} style={{ cursor: 'default' }}>
+                        <td style={{ fontWeight: 500 }}>{formatEventName(name)}</td>
+                        <td style={{ fontWeight: 700, fontSize: 15 }}>{formatNumber(value)}</td>
+                        <td style={{ color: 'var(--text-secondary)' }}>{totals.costs[name] ? formatCurrency(totals.costs[name]) : '—'}</td>
+                      </tr>
+                    ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        )}
+
+        {/* Ad Sets Table */}
+        {adSets.length > 0 && (
+          <div className="table-card">
+            <div className="table-card-header">
+              <h3 className="table-card-title">Conjuntos de Anúncios ({adSets.length})</h3>
+            </div>
+            <div className="table-container">
+              <table className="campaign-table">
+                <thead>
+                  <tr>
+                    <th>Nome</th>
+                    <th>Status</th>
+                    <th>Objetivo</th>
+                    <th>Orçamento Diário</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {adSets.map(adset => (
+                    <tr key={adset.id}>
+                      <td className="campaign-name">{adset.name}</td>
+                      <td>
+                        <span className={`status-badge ${getStatusClass(adset.effective_status)}`}>
+                          <span className="status-dot"></span>
+                          {getStatusLabel(adset.effective_status)}
+                        </span>
+                      </td>
+                      <td>{adset.optimization_goal || '—'}</td>
+                      <td>{adset.daily_budget ? formatCurrency(adset.daily_budget / 100) : '—'}</td>
                     </tr>
                   ))}
-              </tbody>
-            </table>
+                </tbody>
+              </table>
+            </div>
           </div>
-        </div>
-      )}
-
-      {/* Ad Sets Table */}
-      {adSets.length > 0 && (
-        <div className="table-card">
-          <div className="table-card-header">
-            <h3 className="table-card-title">Conjuntos de Anúncios ({adSets.length})</h3>
-          </div>
-          <div className="table-container">
-            <table className="campaign-table">
-              <thead>
-                <tr>
-                  <th>Nome</th>
-                  <th>Status</th>
-                  <th>Objetivo</th>
-                  <th>Orçamento Diário</th>
-                </tr>
-              </thead>
-              <tbody>
-                {adSets.map(adset => (
-                  <tr key={adset.id}>
-                    <td className="campaign-name">{adset.name}</td>
-                    <td>
-                      <span className={`status-badge ${getStatusClass(adset.effective_status)}`}>
-                        <span className="status-dot"></span>
-                        {getStatusLabel(adset.effective_status)}
-                      </span>
-                    </td>
-                    <td>{adset.optimization_goal || '—'}</td>
-                    <td>{adset.daily_budget ? formatCurrency(adset.daily_budget / 100) : '—'}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </div>
-      )}
+        )}
+      </div>
     </>
   );
 }

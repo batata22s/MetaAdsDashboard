@@ -12,6 +12,22 @@ const tooltipStyle = {
 
 export function SpendLineChart({ data }) {
   if (!data || data.length === 0) return <div className="loading-text">Sem dados</div>;
+
+  // With a single data point, use a BarChart instead (a line needs 2+ points)
+  if (data.length === 1) {
+    return (
+      <ResponsiveContainer width="100%" height={300}>
+        <BarChart data={data} margin={{ top: 5, right: 20, left: 10, bottom: 5 }}>
+          <CartesianGrid strokeDasharray="3 3" stroke="rgba(99,102,241,0.1)" />
+          <XAxis dataKey="date" stroke="#64748b" fontSize={11} tickLine={false} />
+          <YAxis stroke="#64748b" fontSize={11} tickLine={false} axisLine={false} />
+          <Tooltip contentStyle={tooltipStyle} />
+          <Bar dataKey="spend" fill="#6366f1" radius={[4, 4, 0, 0]} name="Gasto (R$)" />
+        </BarChart>
+      </ResponsiveContainer>
+    );
+  }
+
   return (
     <ResponsiveContainer width="100%" height={300}>
       <LineChart data={data} margin={{ top: 5, right: 20, left: 10, bottom: 5 }}>
